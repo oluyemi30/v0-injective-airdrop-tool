@@ -3,7 +3,7 @@ import {
   ChainRestAuthApi,
   ChainRestTendermintApi,
   createTransaction,
-  TxGrpcClient,
+  TxClient,
 } from '@injectivelabs/sdk-ts';
 import { Network } from '@injectivelabs/networks';
 import BigNumber from 'bignumber.js';
@@ -11,6 +11,17 @@ import BigNumber from 'bignumber.js';
 const CHAIN_ID = 'injective-888';
 const DENOM = 'inj';
 const INJ_DECIMALS = 18;
+
+/**
+ * Estimate gas fee for transactions
+ * @param gasPrice Gas price in INJ
+ * @param gasLimit Total gas needed
+ * @returns Formatted string of estimated fee in INJ
+ */
+export const estimateGasFee = (gasPrice: number, gasLimit: number): string => {
+  const totalGas = new BigNumber(gasPrice).times(gasLimit);
+  return totalGas.toFixed(18);
+};
 
 interface KeplrWindow extends Window {
   keplr?: any;
@@ -117,11 +128,8 @@ export const sendToken = async (
     );
 
     // Broadcast transaction
-    const txGrpcClient = new TxGrpcClient({
-      channel: network.grpc,
-    });
-
-    const txResponse = await txGrpcClient.broadcast(signResponse.signed);
+    const txClient = new TxClient({ baseURL: network.rest });
+    const txResponse = await txClient.broadcast(signResponse.signed);
 
     if (txResponse.code !== 0) {
       throw new Error(`Transaction failed: ${txResponse.rawLog}`);
