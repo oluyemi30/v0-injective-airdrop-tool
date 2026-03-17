@@ -1,5 +1,4 @@
 'use client';
-// Build cache: 2026-03-17-v2
 
 import {
   MsgSend,

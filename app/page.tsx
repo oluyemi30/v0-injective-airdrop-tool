@@ -1,18 +1,19 @@
 'use client';
-// Build cache: 2026-03-17-v3
+// Cache clear: 2026-03-17
 
 import { useState, useCallback } from 'react';
 import { CSVUploader, CSVRow } from '@/components/CSVUploader';
 import { TransactionTable, TransactionRow } from '@/components/TransactionTable';
 import { useKeplr } from '@/hooks/useKeplr';
 import { sendAllTokens, estimateGasFee } from '@/lib/tokenSender';
-import { validateCSVData } from '@/lib/validation';
+import BigNumber from 'bignumber.js';
+import { deduplicateAddresses, validateCSVData } from '@/lib/validation';
 import { Button } from '@/components/ui/button';
 import { Alert, AlertDescription } from '@/components/ui/alert';
-import { AlertCircle, Wallet, CheckCircle, Info, Zap, Send, RefreshCw } from 'lucide-react';
+import { AlertCircle, Wallet, CheckCircle, Info } from 'lucide-react';
 
-export default function AirdropPage() {
-  const { address, isLoading: isConnecting, error: walletError, connectWallet } = useKeplr();
+export default function Home() {
+  const { address, isConnected, isLoading: isConnecting, error: keplrError, connectWallet } = useKeplr();
   const [csvData, setCSVData] = useState<CSVRow[]>([]);
   const [transactions, setTransactions] = useState<TransactionRow[]>([]);
   const [isSending, setIsSending] = useState(false);
@@ -22,6 +23,7 @@ export default function AirdropPage() {
   const [estimatedGas, setEstimatedGas] = useState<string>('0');
 
   const handleCSVParsed = useCallback((data: CSVRow[]) => {
+    // Validate and deduplicate
     const validationResult = validateCSVData(data);
     
     if (validationResult.invalid.length > 0) {
@@ -39,10 +41,14 @@ export default function AirdropPage() {
     }
 
     if (validationResult.duplicates.length > 0) {
-      setSendInfo(`Removed ${validationResult.duplicates.length} duplicate address(es)`);
+      setSendInfo(
+        `Removed ${validationResult.duplicates.length} duplicate address(es)`
+      );
     }
 
     setCSVData(validationResult.valid);
+    
+    // Initialize transaction rows with pending status
     const initialTransactions: TransactionRow[] = validationResult.valid.map((row) => ({
       address: row.address,
       amount: row.amount,
@@ -50,13 +56,19 @@ export default function AirdropPage() {
     }));
     setTransactions(initialTransactions);
 
+    // Calculate estimated gas
     const gasEstimate = estimateGasFee(0.000000025, 200000 * validationResult.valid.length);
     setEstimatedGas(gasEstimate);
   }, []);
 
-  const handleSendTokens = useCallback(async () => {
-    if (!address || csvData.length === 0) {
-      setSendError('Wallet not connected or no recipients');
+  const handleSendAll = async () => {
+    if (!isConnected || !address) {
+      setSendError('Please connect your wallet first');
+      return;
+    }
+
+    if (csvData.length === 0) {
+      setSendError('Please upload a CSV file first');
       return;
     }
 
@@ -64,41 +76,57 @@ export default function AirdropPage() {
     setSendError('');
 
     try {
-      const results = await sendAllTokens(
-        csvData,
-        address,
-        (progress: number) => setProgress(progress)
-      );
+      const recipients = csvData.map((row) => ({
+        address: row.address,
+        amount: row.amount,
+      }));
 
-      setTransactions((prev) =>
-        prev.map((tx) => {
-          const result = results.find((r) => r.address === tx.address);
-          return result
-            ? {
-                ...tx,
-                status: result.success ? 'success' : 'failed',
-                txHash: result.txHash,
-              }
-            : tx;
-        })
-      );
-    } catch (err: any) {
-      setSendError(err.message || 'Failed to send tokens');
+      const results = await sendAllTokens(recipients, (progressData) => {
+        setProgress(Math.round((progressData.completed / progressData.total) * 100));
+
+        // Update transaction status
+        setTransactions((prev) =>
+          prev.map((tx) =>
+            tx.address === progressData.address
+              ? {
+                  ...tx,
+                  status: progressData.status,
+                }
+              : tx
+          )
+        );
+      });
+
+      // Update final results
+      results.forEach((result) => {
+        setTransactions((prev) =>
+          prev.map((tx) =>
+            tx.address === result.address
+              ? {
+                  ...tx,
+                  status: result.status,
+                  txHash: result.txHash,
+                  error: result.error,
+                }
+              : tx
+          )
+        );
+      });
+
+      setProgress(100);
+    } catch (error: any) {
+      setSendError(error.message || 'Failed to send tokens');
+      setProgress(0);
     } finally {
       setIsSending(false);
-      setProgress(0);
     }
-  }, [address, csvData]);
+  };
 
-  const handleRetryFailed = useCallback(async () => {
-    const failedTransactions = transactions.filter((tx) => tx.status === 'failed');
+  const handleRetryFailed = async () => {
+    const failedTransactions = transactions.filter((t) => t.status === 'failed');
+
     if (failedTransactions.length === 0) {
-      setSendInfo('No failed transactions to retry');
-      return;
-    }
-
-    if (!address) {
-      setSendError('Wallet not connected');
+      setSendError('No failed transactions to retry');
       return;
     }
 
@@ -106,207 +134,189 @@ export default function AirdropPage() {
     setSendError('');
 
     try {
-      const failedCSVData = csvData.filter((csv) =>
-        failedTransactions.some((tx) => tx.address === csv.address)
-      );
+      const recipients = failedTransactions.map((tx) => ({
+        address: tx.address,
+        amount: tx.amount,
+      }));
 
-      const results = await sendAllTokens(
-        failedCSVData,
-        address,
-        (progress: number) => setProgress(progress)
-      );
+      const results = await sendAllTokens(recipients, (progressData) => {
+        // Update transaction status
+        setTransactions((prev) =>
+          prev.map((tx) =>
+            tx.address === progressData.address
+              ? {
+                  ...tx,
+                  status: progressData.status,
+                }
+              : tx
+          )
+        );
+      });
 
-      setTransactions((prev) =>
-        prev.map((tx) => {
-          const result = results.find((r) => r.address === tx.address);
-          return result ? { ...tx, status: result.success ? 'success' : 'failed', txHash: result.txHash } : tx;
-        })
-      );
-    } catch (err: any) {
-      setSendError(err.message || 'Failed to retry');
+      // Update final results
+      results.forEach((result) => {
+        setTransactions((prev) =>
+          prev.map((tx) =>
+            tx.address === result.address
+              ? {
+                  ...tx,
+                  status: result.status,
+                  txHash: result.txHash,
+                  error: result.error,
+                }
+              : tx
+          )
+        );
+      });
+    } catch (error: any) {
+      setSendError(error.message || 'Failed to retry transactions');
     } finally {
       setIsSending(false);
-      setProgress(0);
     }
-  }, [address, csvData, transactions]);
+  };
 
-  const totalAmount = csvData.reduce((sum, r) => sum + parseFloat(r.amount || '0'), 0);
   const failedCount = transactions.filter((t) => t.status === 'failed').length;
-  const successCount = transactions.filter((t) => t.status === 'success').length;
 
   return (
-    <main className="min-h-screen bg-gradient-to-br from-[#0f0a1f] via-[#1a1228] to-[#0f0a1f] py-12 px-4 sm:px-6 lg:px-8">
-      {/* Animated background elements */}
-      <div className="fixed inset-0 overflow-hidden pointer-events-none">
-        <div className="absolute -top-40 -right-40 w-80 h-80 bg-gradient-to-br from-indigo-500/10 to-purple-500/10 rounded-full blur-3xl animate-pulse"></div>
-        <div className="absolute -bottom-40 -left-40 w-80 h-80 bg-gradient-to-tr from-pink-500/10 to-orange-500/10 rounded-full blur-3xl animate-pulse"></div>
-      </div>
-
-      <div className="relative max-w-6xl mx-auto">
+    <main className="min-h-screen bg-gradient-to-br from-slate-50 to-slate-100 p-4 md:p-8">
+      <div className="max-w-6xl mx-auto space-y-8">
         {/* Header */}
-        <div className="mb-12 text-center">
-          <div className="inline-flex items-center gap-2 mb-4 px-4 py-2 rounded-full glass glow-indigo">
-            <Zap className="w-4 h-4 text-indigo-400" />
-            <span className="text-sm font-medium text-indigo-300">Injective Airdrop Tool</span>
-          </div>
-          <h1 className="gradient-text text-5xl sm:text-6xl font-bold mb-4">
-            Token Distribution
-          </h1>
-          <p className="text-xl text-muted-foreground max-w-2xl mx-auto">
-            Distribute INJ tokens across multiple wallets with a single click. Fast, secure, and transparent.
-          </p>
+        <div className="text-center space-y-2">
+          <h1 className="text-4xl font-bold text-slate-900">Injective Airdrop Tool</h1>
+          <p className="text-slate-600">Send INJ tokens to multiple recipients from a CSV file</p>
         </div>
 
-        <div className="grid gap-8 lg:grid-cols-3">
-          {/* Left Column - Upload & Wallet */}
-          <div className="lg:col-span-2 space-y-6">
-            {/* Wallet Connection Card */}
-            <div className="glass glow-indigo p-6 rounded-2xl">
-              <div className="flex items-center justify-between mb-4">
-                <h2 className="text-xl font-bold flex items-center gap-2">
-                  <Wallet className="w-5 h-5 text-indigo-400" />
-                  Wallet Connection
-                </h2>
-                {address && <CheckCircle className="w-5 h-5 text-emerald-400" />}
+        {/* Wallet Connection */}
+        <div className="bg-white rounded-lg shadow-sm p-6 border border-slate-200">
+          <h2 className="text-xl font-semibold text-slate-900 mb-4 flex items-center gap-2">
+            <Wallet className="w-5 h-5" />
+            Wallet Connection
+          </h2>
+
+          {keplrError && (
+            <Alert variant="destructive" className="mb-4">
+              <AlertCircle className="h-4 w-4" />
+              <AlertDescription>{keplrError}</AlertDescription>
+            </Alert>
+          )}
+
+          {!isConnected ? (
+            <Button
+              onClick={connectWallet}
+              disabled={isConnecting}
+              size="lg"
+              className="w-full md:w-auto"
+            >
+              {isConnecting ? 'Connecting...' : 'Connect Keplr Wallet'}
+            </Button>
+          ) : (
+            <div className="flex items-center gap-3">
+              <CheckCircle className="w-5 h-5 text-green-600" />
+              <div>
+                <p className="font-semibold text-slate-900">Wallet Connected</p>
+                <p className="text-sm text-slate-600 font-mono break-all">{address}</p>
               </div>
+            </div>
+          )}
+        </div>
 
-              {address ? (
-                <div className="space-y-3">
-                  <div className="p-4 rounded-xl bg-black/20 border border-emerald-500/20">
-                    <p className="text-sm text-muted-foreground mb-1">Connected Address</p>
-                    <p className="font-mono text-sm text-emerald-300 break-all">{address}</p>
-                  </div>
-                  <button
-                    onClick={connectWallet}
-                    className="w-full px-4 py-2 rounded-lg text-sm font-medium text-foreground hover:text-white transition-colors"
-                  >
-                    Reconnect
-                  </button>
-                </div>
-              ) : (
-                <Button
-                  onClick={connectWallet}
-                  disabled={isConnecting}
-                  className="w-full h-12 text-base font-semibold bg-gradient-to-r from-indigo-600 to-purple-600 hover:from-indigo-700 hover:to-purple-700 text-white border-0 rounded-lg glow-indigo hover-lift"
-                >
-                  {isConnecting ? 'Connecting...' : 'Connect Keplr Wallet'}
-                </Button>
-              )}
+        {/* CSV Upload */}
+        <div className="bg-white rounded-lg shadow-sm p-6 border border-slate-200">
+          <h2 className="text-xl font-semibold text-slate-900 mb-4">1. Upload CSV File</h2>
+          <CSVUploader onDataParsed={handleCSVParsed} />
+        </div>
 
-              {walletError && (
-                <Alert className="mt-4 bg-red-500/10 border-red-500/20">
-                  <AlertCircle className="h-4 w-4 text-red-400" />
-                  <AlertDescription className="text-red-300">{walletError}</AlertDescription>
+        {/* Send Tokens */}
+        <div className="bg-white rounded-lg shadow-sm p-6 border border-slate-200">
+          <h2 className="text-xl font-semibold text-slate-900 mb-4">2. Send Tokens</h2>
+
+          {sendError && (
+            <Alert variant="destructive" className="mb-4">
+              <AlertCircle className="h-4 w-4" />
+              <AlertDescription>{sendError}</AlertDescription>
+            </Alert>
+          )}
+
+          <div className="space-y-4">
+            {csvData.length > 0 && (
+              <>
+              <div className="bg-blue-50 p-3 rounded-lg text-sm">
+                <p className="font-semibold text-blue-900">Ready to send to {csvData.length} recipient(s)</p>
+                <p className="text-blue-700">
+                  Total: {csvData.reduce((sum, r) => sum + parseFloat(r.amount || '0'), 0).toFixed(2)} INJ
+                </p>
+                <p className="text-blue-600 text-xs mt-1">
+                  Estimated gas fee: {parseFloat(estimatedGas).toFixed(8)} INJ
+                </p>
+              </div>
+              {sendInfo && (
+                <Alert className="bg-amber-50 border-amber-200">
+                  <Info className="h-4 w-4" />
+                  <AlertDescription className="text-amber-700">{sendInfo}</AlertDescription>
                 </Alert>
               )}
-            </div>
-
-            {/* CSV Upload Card */}
-            <div className="glass glow-indigo p-6 rounded-2xl">
-              <h2 className="text-xl font-bold mb-4 flex items-center gap-2">
-                <Send className="w-5 h-5 text-purple-400" />
-                Upload Recipients
-              </h2>
-              <CSVUploader onDataParsed={handleCSVParsed} />
-            </div>
-          </div>
-
-          {/* Right Column - Stats & Actions */}
-          <div className="lg:col-span-1 space-y-6">
-            {/* Stats Card */}
-            {csvData.length > 0 && (
-              <div className="glass glow-pink p-6 rounded-2xl">
-                <h3 className="text-sm font-semibold text-muted-foreground mb-4 uppercase tracking-wide">
-                  Distribution Stats
-                </h3>
-                <div className="space-y-4">
-                  <div>
-                    <p className="text-3xl font-bold gradient-text">{csvData.length}</p>
-                    <p className="text-sm text-muted-foreground">Recipients</p>
-                  </div>
-                  <div className="h-px bg-gradient-to-r from-indigo-500/20 to-pink-500/20"></div>
-                  <div>
-                    <p className="text-2xl font-bold text-cyan-300">{totalAmount.toFixed(2)}</p>
-                    <p className="text-sm text-muted-foreground">Total INJ</p>
-                  </div>
-                  <div className="h-px bg-gradient-to-r from-indigo-500/20 to-pink-500/20"></div>
-                  <div>
-                    <p className="text-lg font-mono text-amber-300">{parseFloat(estimatedGas).toFixed(8)}</p>
-                    <p className="text-sm text-muted-foreground">Est. Gas</p>
-                  </div>
-                  {successCount > 0 && (
-                    <>
-                      <div className="h-px bg-gradient-to-r from-indigo-500/20 to-pink-500/20"></div>
-                      <div>
-                        <p className="text-lg font-bold text-emerald-300">{successCount}</p>
-                        <p className="text-sm text-muted-foreground">Successful</p>
-                      </div>
-                    </>
-                  )}
-                  {failedCount > 0 && (
-                    <>
-                      <div className="h-px bg-gradient-to-r from-indigo-500/20 to-pink-500/20"></div>
-                      <div>
-                        <p className="text-lg font-bold text-red-400">{failedCount}</p>
-                        <p className="text-sm text-muted-foreground">Failed</p>
-                      </div>
-                    </>
-                  )}
-                </div>
-              </div>
+            </>
             )}
 
-            {/* Action Buttons */}
-            {csvData.length > 0 && (
-              <div className="space-y-3">
-                <Button
-                  onClick={handleSendTokens}
-                  disabled={!address || isSending}
-                  className="w-full h-12 text-base font-semibold bg-gradient-to-r from-pink-600 to-orange-600 hover:from-pink-700 hover:to-orange-700 text-white border-0 rounded-lg glow-pink hover-lift disabled:opacity-50 disabled:cursor-not-allowed"
-                >
-                  {isSending ? `Sending (${progress}/${csvData.length})...` : 'Send All Tokens'}
-                </Button>
+            <div className="flex gap-3 flex-col md:flex-row">
+              <Button
+                onClick={handleSendAll}
+                disabled={!isConnected || csvData.length === 0 || isSending}
+                size="lg"
+                className="flex-1"
+              >
+                {isSending ? `Sending... (${progress}%)` : 'Send All Tokens'}
+              </Button>
 
-                {failedCount > 0 && (
-                  <Button
-                    onClick={handleRetryFailed}
-                    disabled={isSending}
-                    variant="outline"
-                    className="w-full h-10 font-semibold border border-amber-500/30 text-amber-300 hover:bg-amber-500/10 rounded-lg hover-lift"
-                  >
-                    <RefreshCw className="w-4 h-4 mr-2" />
-                    Retry Failed ({failedCount})
-                  </Button>
-                )}
+              {failedCount > 0 && (
+                <Button
+                  onClick={handleRetryFailed}
+                  disabled={isSending}
+                  variant="outline"
+                  size="lg"
+                >
+                  Retry {failedCount} Failed
+                </Button>
+              )}
+            </div>
+
+            {isSending && (
+              <div className="w-full bg-gray-200 rounded-full h-2 overflow-hidden">
+                <div
+                  className="h-full bg-blue-600 transition-all duration-300"
+                  style={{ width: `${progress}%` }}
+                />
               </div>
             )}
           </div>
         </div>
-
-        {/* Info Messages */}
-        {sendInfo && (
-          <Alert className="mt-8 bg-cyan-500/10 border-cyan-500/20 rounded-2xl">
-            <Info className="h-4 w-4 text-cyan-400" />
-            <AlertDescription className="text-cyan-300">{sendInfo}</AlertDescription>
-          </Alert>
-        )}
-
-        {sendError && (
-          <Alert className="mt-8 bg-red-500/10 border-red-500/20 rounded-2xl">
-            <AlertCircle className="h-4 w-4 text-red-400" />
-            <AlertDescription className="text-red-300">{sendError}</AlertDescription>
-          </Alert>
-        )}
 
         {/* Transaction Table */}
         {transactions.length > 0 && (
-          <div className="mt-12">
-            <h2 className="text-2xl font-bold mb-6 gradient-text">Transaction History</h2>
-            <div className="glass glow-indigo rounded-2xl p-6 overflow-hidden">
-              <TransactionTable transactions={transactions} />
-            </div>
+          <div className="bg-white rounded-lg shadow-sm p-6 border border-slate-200">
+            <h2 className="text-xl font-semibold text-slate-900 mb-4">3. Transaction Status</h2>
+            <TransactionTable
+              transactions={transactions}
+              totalAmount={csvData.reduce((sum, r) => sum + parseFloat(r.amount || '0'), 0)}
+            />
           </div>
         )}
+
+        {/* Footer */}
+        <div className="text-center text-sm text-slate-600 space-y-2">
+          <p>Testnet: injective-888</p>
+          <p>
+            Need help?{' '}
+            <a
+              href="https://testnet.explorer.injective.dev/"
+              target="_blank"
+              rel="noopener noreferrer"
+              className="text-blue-600 hover:underline"
+            >
+              Check block explorer
+            </a>
+          </p>
+        </div>
       </div>
     </main>
   );
