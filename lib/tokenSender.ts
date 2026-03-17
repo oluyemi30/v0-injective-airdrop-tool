@@ -1,3 +1,5 @@
+'use client';
+
 import {
   MsgSend,
   ChainRestAuthApi,
@@ -5,7 +7,7 @@ import {
   createTransaction,
   TxClient,
 } from '@injectivelabs/sdk-ts';
-import { Network } from '@injectivelabs/networks';
+import { Network, getNetworkEndpoints } from '@injectivelabs/networks';
 import BigNumber from 'bignumber.js';
 
 const CHAIN_ID = 'injective-888';
@@ -52,182 +54,159 @@ export const sendToken = async (
     const keplr = keplrWindow.keplr;
 
     if (!keplr) {
-      throw new Error('Keplr not found');
+      return {
+        success: false,
+        error: 'Keplr wallet not found',
+      };
     }
 
-    // Get sender address
+    // Get signer and account info
     const offlineSigner = keplr.getOfflineSigner(CHAIN_ID);
     const accounts = await offlineSigner.getAccounts();
-    const fromAddress = accounts[0].address;
 
-    // Convert amount to correct decimals (18 for INJ)
-    const amountInTokens = new BigNumber(amount).shiftedBy(INJ_DECIMALS).toFixed(0);
+    if (!accounts || accounts.length === 0) {
+      return {
+        success: false,
+        error: 'No account found in Keplr',
+      };
+    }
 
-    // Create MsgSend
-    const msg = MsgSend.fromJSON({
-      fromAddress,
-      toAddress,
-      amount: [
-        {
-          denom: DENOM,
-          amount: amountInTokens,
-        },
-      ],
+    const senderAddress = accounts[0].address;
+
+    // Convert amount to base units (18 decimals for INJ)
+    const amountInInj = new BigNumber(amount)
+      .times(new BigNumber(10).pow(INJ_DECIMALS))
+      .toFixed(0);
+
+    // Create message
+    const msg = MsgSend.create({
+      srcInjectiveAddress: senderAddress,
+      dstInjectiveAddress: toAddress,
+      amount: {
+        denom: DENOM,
+        amount: amountInInj,
+      },
     });
 
-    // Get chain info
-    const network = Network.InjectiveTestnet;
-    const chainRestAuthApi = new ChainRestAuthApi({
-      baseURL: network.rest,
+    // Get network endpoints
+    const endpoints = getNetworkEndpoints(Network.TestnetK8s);
+    const chainId = 'injective-888';
+
+    // Get account and sequence for tx
+    const authApi = new ChainRestAuthApi({
+      baseURL: endpoints.rest,
     });
 
-    const chainRestTendermintApi = new ChainRestTendermintApi({
-      baseURL: network.rest,
-    });
+    const auth = await authApi.fetchAccount(senderAddress);
 
-    // Get account number and sequence
-    const { account } = await chainRestAuthApi.fetchAccount(fromAddress);
-    const { signDoc } = await chainRestTendermintApi.fetchLatestBlock();
-
-    const latestHeight = signDoc?.header?.height || 0;
-    const blockNumber = parseInt(latestHeight.toString());
-
-    // Build transaction
+    // Create transaction
     const tx = createTransaction({
-      message: msg,
-      memo: 'INJ Transfer via Airdrop Tool',
-      signMode: 0, // DirectSignMode
+      pubKey: Buffer.from(accounts[0].pubkey).toString('base64'),
+      chainId,
       fee: {
-        gas: '200000', // Standard gas for send
         amount: [
           {
             denom: DENOM,
-            amount: '0', // No fee for testnet
+            amount: '50000000000000',
           },
         ],
+        gas: '200000',
       },
-      timeoutHeight: blockNumber + 30,
-      accountNumber: parseInt(account?.account_number?.toString() || '0'),
-      sequence: parseInt(account?.sequence?.toString() || '0'),
-      chainId: CHAIN_ID,
+      sequence: parseInt(auth.account.base_account.sequence, 10),
+      accountNumber: parseInt(auth.account.base_account.account_number, 10),
+      messages: [msg],
     });
 
     // Sign transaction
-    const signResponse = await keplr.signDirect(
-      CHAIN_ID,
-      fromAddress,
+    const signResponse = await offlineSigner.signDirect(
+      senderAddress,
       {
-        bodyBytes: tx.bodyBytes,
-        authInfoBytes: tx.authInfoBytes,
-        chainId: CHAIN_ID,
-        accountNumber: account?.account_number?.toString() || '0',
-      },
-      {
-        isTransaction: true,
+        bodyBytes: tx.getBodyBytes(),
+        authInfoBytes: tx.getAuthInfoBytes(),
+        chainId,
       }
     );
 
     // Broadcast transaction
-    const txClient = new TxClient({ baseURL: network.rest });
+    const txClient = new TxClient({
+      baseURL: endpoints.rest,
+    });
+
     const txResponse = await txClient.broadcast(signResponse.signed);
 
-    if (txResponse.code !== 0) {
-      throw new Error(`Transaction failed: ${txResponse.rawLog}`);
+    if (txResponse.code === 0) {
+      console.log('[v0] Transaction successful:', txResponse.txhash);
+      return {
+        success: true,
+        txHash: txResponse.txhash,
+      };
+    } else {
+      return {
+        success: false,
+        error: `Transaction failed: ${txResponse.rawLog}`,
+      };
     }
-
-    console.log('[TokenSender] Transaction successful:', txResponse.transactionHash);
-
-    return {
-      success: true,
-      txHash: txResponse.transactionHash,
-    };
   } catch (error: any) {
-    const errorMessage = error.message || 'Unknown error';
-    console.error('[TokenSender] Error:', errorMessage);
+    console.error('[v0] Send token error:', error);
     return {
       success: false,
-      error: errorMessage,
+      error: error.message || 'Unknown error',
     };
   }
 };
 
 /**
- * Send tokens to multiple recipients
+ * Send tokens to multiple recipients with progress tracking
  */
 export const sendAllTokens = async (
   recipients: Array<{ address: string; amount: string }>,
   onProgress?: (progress: TransactionProgress) => void
 ): Promise<Array<{ address: string; status: 'success' | 'failed'; txHash?: string; error?: string }>> => {
-  const results = [];
-  const delay = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
+  const results: Array<{ address: string; status: 'success' | 'failed'; txHash?: string; error?: string }> = [];
 
   for (let i = 0; i < recipients.length; i++) {
-    const { address, amount } = recipients[i];
+    const recipient = recipients[i];
 
-    // Call progress callback
+    // Notify progress
     if (onProgress) {
       onProgress({
         completed: i,
         total: recipients.length,
-        address,
+        address: recipient.address,
         status: 'pending',
       });
     }
 
-    try {
-      const result = await sendToken(address, amount);
+    // Send token
+    const result = await sendToken(recipient.address, recipient.amount);
 
-      if (result.success) {
-        results.push({
-          address,
-          status: 'success',
-          txHash: result.txHash,
-        });
-
-        if (onProgress) {
-          onProgress({
-            completed: i + 1,
-            total: recipients.length,
-            address,
-            status: 'success',
-          });
-        }
-      } else {
-        results.push({
-          address,
-          status: 'failed',
-          error: result.error,
-        });
-
-        if (onProgress) {
-          onProgress({
-            completed: i + 1,
-            total: recipients.length,
-            address,
-            status: 'failed',
-          });
-        }
-      }
-    } catch (error: any) {
+    if (result.success) {
       results.push({
-        address,
-        status: 'failed',
-        error: error.message || 'Unknown error',
+        address: recipient.address,
+        status: 'success',
+        txHash: result.txHash,
       });
-
-      if (onProgress) {
-        onProgress({
-          completed: i + 1,
-          total: recipients.length,
-          address,
-          status: 'failed',
-        });
-      }
+    } else {
+      results.push({
+        address: recipient.address,
+        status: 'failed',
+        error: result.error,
+      });
     }
 
-    // Add delay between transactions (1 second)
+    // Notify completion
+    if (onProgress) {
+      onProgress({
+        completed: i + 1,
+        total: recipients.length,
+        address: recipient.address,
+        status: result.success ? 'success' : 'failed',
+      });
+    }
+
+    // Delay between transactions (1 second)
     if (i < recipients.length - 1) {
-      await delay(1000);
+      await new Promise((resolve) => setTimeout(resolve, 1000));
     }
   }
 

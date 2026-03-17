@@ -2,6 +2,52 @@ import { useState, useCallback, useEffect } from 'react';
 
 const CHAIN_ID = 'injective-888';
 
+// Injective testnet chain configuration
+const INJECTIVE_TESTNET_CONFIG = {
+  chainId: 'injective-888',
+  chainName: 'Injective Testnet',
+  rpc: 'https://testnet.tm.injective.network:26657',
+  rest: 'https://testnet-api.injective.dev',
+  bip44: {
+    coinType: 60,
+  },
+  bech32Config: {
+    bech32PrefixAccAddr: 'inj',
+    bech32PrefixAccPub: 'injpub',
+    bech32PrefixValAddr: 'injvaloper',
+    bech32PrefixValPub: 'injvaloperpub',
+    bech32PrefixConsAddr: 'injvalcons',
+    bech32PrefixConsPub: 'injvalconspub',
+  },
+  currencies: [
+    {
+      coinDenom: 'INJ',
+      coinMinimalDenom: 'inj',
+      coinDecimals: 18,
+      coinGeckoId: 'injective-protocol',
+    },
+  ],
+  feeCurrencies: [
+    {
+      coinDenom: 'INJ',
+      coinMinimalDenom: 'inj',
+      coinDecimals: 18,
+      coinGeckoId: 'injective-protocol',
+      gasPriceStep: {
+        low: 0.000000025,
+        average: 0.000000035,
+        high: 0.000000050,
+      },
+    },
+  ],
+  stakeCurrency: {
+    coinDenom: 'INJ',
+    coinMinimalDenom: 'inj',
+    coinDecimals: 18,
+    coinGeckoId: 'injective-protocol',
+  },
+};
+
 interface KeplrWindow extends Window {
   keplr?: any;
 }
@@ -57,7 +103,17 @@ export const useKeplr = (): UseKeplrReturn => {
         throw new Error('Keplr not found');
       }
 
-      // Request connection and suggest chain
+      // Suggest chain first if it doesn't exist
+      try {
+        await keplr.experimentalSuggestChain(INJECTIVE_TESTNET_CONFIG);
+      } catch (suggestErr: any) {
+        // Chain might already be added, continue anyway
+        if (!suggestErr.message?.includes('already exists')) {
+          console.log('[v0] Chain suggestion:', suggestErr.message);
+        }
+      }
+
+      // Request connection
       await keplr.enable(CHAIN_ID);
 
       // Get offline signer
@@ -76,8 +132,8 @@ export const useKeplr = (): UseKeplrReturn => {
 
       if (errorMessage.includes('User rejected')) {
         setError('Connection rejected. Please try again.');
-      } else if (errorMessage.includes('not found')) {
-        setError('Keplr chain not found. Please make sure injective-888 testnet is added.');
+      } else if (errorMessage.includes('not found') || errorMessage.includes('modular chain')) {
+        setError('Please check your Keplr wallet and try again.');
       } else {
         setError(errorMessage);
       }
