@@ -83,7 +83,7 @@ export const CSVUploader = ({ onDataParsed }: CSVUploaderProps) => {
 
   return (
     <div className="w-full space-y-4">
-      <div className="border-2 border-dashed border-gray-300 rounded-lg p-6 text-center">
+      <div className="rounded-xl border border-cyan-300/35 bg-slate-900/50 p-6 text-center">
         <input
           ref={fileInputRef}
           type="file"
@@ -95,8 +95,7 @@ export const CSVUploader = ({ onDataParsed }: CSVUploaderProps) => {
         <label htmlFor="csv-upload">
           <Button
             asChild
-            variant="outline"
-            className="cursor-pointer"
+            className="cursor-pointer bg-cyan-400 text-slate-950 hover:bg-cyan-300"
             disabled={isLoading}
           >
             <span className="flex items-center gap-2">
@@ -105,7 +104,7 @@ export const CSVUploader = ({ onDataParsed }: CSVUploaderProps) => {
             </span>
           </Button>
         </label>
-        <p className="text-sm text-gray-500 mt-2">
+        <p className="mt-2 text-sm text-slate-300">
           CSV must contain: address, amount
         </p>
       </div>
@@ -120,15 +119,15 @@ export const CSVUploader = ({ onDataParsed }: CSVUploaderProps) => {
       {parsedData.length > 0 && (
         <div className="space-y-3">
           <div className="flex items-center gap-2">
-            <CheckCircle className="w-5 h-5 text-green-600" />
-            <p className="font-semibold">
+            <CheckCircle className="h-5 w-5 text-emerald-300" />
+            <p className="font-semibold text-emerald-100">
               {parsedData.length} valid row{parsedData.length !== 1 ? 's' : ''} loaded
             </p>
           </div>
 
-          <div className="border rounded-lg overflow-hidden">
+          <div className="overflow-hidden rounded-xl border border-cyan-300/30">
             <table className="w-full text-sm">
-              <thead className="bg-gray-100">
+              <thead className="bg-slate-800/90 text-cyan-100">
                 <tr>
                   <th className="p-3 text-left font-semibold">Address</th>
                   <th className="p-3 text-left font-semibold">Amount</th>
@@ -136,9 +135,9 @@ export const CSVUploader = ({ onDataParsed }: CSVUploaderProps) => {
               </thead>
               <tbody>
                 {preview.map((row, idx) => (
-                  <tr key={idx} className="border-t hover:bg-gray-50">
-                    <td className="p-3 font-mono text-xs truncate">{row.address}</td>
-                    <td className="p-3">{row.amount}</td>
+                  <tr key={idx} className="border-t border-cyan-200/20 bg-slate-900/65 text-slate-100 hover:bg-slate-800/80">
+                    <td className="truncate p-3 font-mono text-xs">{row.address}</td>
+                    <td className="p-3 font-medium text-cyan-100">{row.amount}</td>
                   </tr>
                 ))}
               </tbody>
@@ -146,7 +145,7 @@ export const CSVUploader = ({ onDataParsed }: CSVUploaderProps) => {
           </div>
 
           {parsedData.length > 5 && (
-            <p className="text-xs text-gray-500">
+            <p className="text-xs text-slate-300">
               Showing first 5 of {parsedData.length} rows
             </p>
           )}

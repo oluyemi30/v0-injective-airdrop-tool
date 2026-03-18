@@ -34,13 +34,13 @@ export const TransactionTable = ({
   const getStatusColor = (status: string) => {
     switch (status) {
       case 'success':
-        return 'bg-green-50 text-green-700';
+        return 'bg-emerald-950/45 text-emerald-100';
       case 'failed':
-        return 'bg-red-50 text-red-700';
+        return 'bg-rose-950/45 text-rose-100';
       case 'pending':
-        return 'bg-yellow-50 text-yellow-700';
+        return 'bg-amber-950/45 text-amber-100';
       default:
-        return 'bg-gray-50 text-gray-700';
+        return 'bg-slate-900/50 text-slate-200';
     }
   };
 
@@ -68,34 +68,34 @@ export const TransactionTable = ({
     <div className="w-full space-y-4">
       {/* Summary Stats */}
       <div className="grid grid-cols-2 gap-3 md:grid-cols-4">
-        <div className="bg-blue-50 p-3 rounded-lg">
-          <p className="text-xs text-gray-600">Total Recipients</p>
-          <p className="text-xl font-bold text-blue-600">{transactions.length}</p>
+        <div className="rounded-lg border border-cyan-300/30 bg-cyan-950/35 p-3">
+          <p className="text-xs text-slate-300">Total Recipients</p>
+          <p className="text-xl font-bold text-cyan-200">{transactions.length}</p>
         </div>
-        <div className="bg-green-50 p-3 rounded-lg">
-          <p className="text-xs text-gray-600">Successful</p>
-          <p className="text-xl font-bold text-green-600">{successCount}</p>
+        <div className="rounded-lg border border-emerald-300/30 bg-emerald-950/35 p-3">
+          <p className="text-xs text-slate-300">Successful</p>
+          <p className="text-xl font-bold text-emerald-200">{successCount}</p>
         </div>
-        <div className="bg-red-50 p-3 rounded-lg">
-          <p className="text-xs text-gray-600">Failed</p>
-          <p className="text-xl font-bold text-red-600">{failedCount}</p>
+        <div className="rounded-lg border border-rose-300/30 bg-rose-950/35 p-3">
+          <p className="text-xs text-slate-300">Failed</p>
+          <p className="text-xl font-bold text-rose-200">{failedCount}</p>
         </div>
-        <div className="bg-yellow-50 p-3 rounded-lg">
-          <p className="text-xs text-gray-600">Pending</p>
-          <p className="text-xl font-bold text-yellow-600">{pendingCount}</p>
+        <div className="rounded-lg border border-amber-300/30 bg-amber-950/35 p-3">
+          <p className="text-xs text-slate-300">Pending</p>
+          <p className="text-xl font-bold text-amber-200">{pendingCount}</p>
         </div>
       </div>
 
       {/* Total Amount */}
-      <div className="bg-gradient-to-r from-blue-50 to-blue-100 p-4 rounded-lg">
-        <p className="text-sm text-gray-600">Total Amount to Send</p>
-        <p className="text-2xl font-bold text-blue-700">{totalAmountValue.toFixed(2)} INJ</p>
+      <div className="rounded-lg border border-cyan-300/30 bg-linear-to-r from-cyan-900/35 to-blue-900/30 p-4">
+        <p className="text-sm text-slate-300">Total Amount to Send</p>
+        <p className="text-2xl font-bold text-cyan-100">{totalAmountValue.toFixed(2)} INJ</p>
       </div>
 
       {/* Transaction Table */}
-      <div className="border rounded-lg overflow-x-auto">
+      <div className="overflow-x-auto rounded-xl border border-cyan-300/30">
         <table className="w-full text-sm">
-          <thead className="bg-gray-100">
+          <thead className="bg-slate-800/90 text-cyan-100">
             <tr>
               <th className="p-3 text-left font-semibold">Address</th>
               <th className="p-3 text-left font-semibold">Amount (INJ)</th>
@@ -107,7 +107,7 @@ export const TransactionTable = ({
           <tbody>
             {transactions.map((tx, idx) => (
               <tr key={idx} className={`border-t ${getStatusColor(tx.status)}`}>
-                <td className="p-3 font-mono text-xs truncate max-w-[150px] md:max-w-[200px]">
+                <td className="max-w-37.5 truncate p-3 font-mono text-xs md:max-w-50">
                   {tx.address}
                 </td>
                 <td className="p-3 font-semibold">{tx.amount}</td>
@@ -125,7 +125,7 @@ export const TransactionTable = ({
                 <td className="p-3">
                   {tx.txHash ? (
                     <div className="flex items-center gap-2">
-                      <span className="font-mono text-xs truncate max-w-[120px]">
+                      <span className="max-w-30 truncate font-mono text-xs">
                         {tx.txHash.slice(0, 8)}...
                       </span>
                       <Button
@@ -133,12 +133,13 @@ export const TransactionTable = ({
                         variant="ghost"
                         onClick={() => copyToClipboard(tx.txHash!)}
                         title="Copy transaction hash"
+                        className="text-cyan-100 hover:bg-slate-800/80 hover:text-cyan-100"
                       >
                         <Copy className="w-3 h-3" />
                       </Button>
                     </div>
                   ) : (
-                    <span className="text-gray-400">-</span>
+                    <span className="text-slate-400">-</span>
                   )}
                 </td>
                 <td className="p-3">
@@ -153,7 +154,7 @@ export const TransactionTable = ({
                     </Button>
                   )}
                   {copiedHash === tx.txHash && (
-                    <span className="text-xs text-green-600">Copied!</span>
+                    <span className="text-xs text-emerald-300">Copied!</span>
                   )}
                 </td>
               </tr>
@@ -163,7 +164,7 @@ export const TransactionTable = ({
       </div>
 
       {transactions.length === 0 && (
-        <div className="text-center py-8 text-gray-500">
+        <div className="py-8 text-center text-slate-300">
           <p>No transactions yet. Upload a CSV and connect your wallet to start.</p>
         </div>
       )}
