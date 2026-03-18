@@ -1,14 +1,14 @@
 'use client';
 // Cache clear: 2026-03-17
 
-import { useState, useCallback } from 'react';
+import { useState, useCallback, useRef } from 'react';
 import { useRouter } from 'next/navigation';
 import { Space_Grotesk } from 'next/font/google';
 import Papa from 'papaparse';
 import { useKeplr } from '@/hooks/useKeplr';
 import { Button } from '@/components/ui/button';
 import { Alert, AlertDescription } from '@/components/ui/alert';
-import { AlertCircle, Wallet, FolderOpen, LogOut } from 'lucide-react';
+import { AlertCircle, Wallet, FolderOpen, LogOut, Upload } from 'lucide-react';
 
 const spaceGrotesk = Space_Grotesk({
   subsets: ['latin'],
@@ -20,6 +20,7 @@ export default function Home() {
   const { address, isConnected, isLoading: isConnecting, error: keplrError, connectWallet, disconnect } = useKeplr();
   const [uploadError, setUploadError] = useState<string>('');
   const [isDragging, setIsDragging] = useState(false);
+  const fileInputRef = useRef<HTMLInputElement>(null);
 
   const handleCSVParsed = useCallback((data: Array<{ address: string; amount: string }>) => {
     try {
@@ -137,6 +138,22 @@ export default function Home() {
                 }}
               />
 
+              <input
+                ref={fileInputRef}
+                type="file"
+                accept=".csv"
+                onChange={(e) => {
+                  const file = e.target.files?.[0];
+                  if (file) {
+                    processFile(file);
+                    if (fileInputRef.current) {
+                      fileInputRef.current.value = '';
+                    }
+                  }
+                }}
+                className="hidden"
+                id="csv-upload"
+              />
               <div
                 className={`relative z-20 mx-auto flex h-80 w-80 cursor-pointer flex-col items-center justify-center rounded-full border p-8 shadow-[0_0_80px_rgba(17,211,233,0.18)] backdrop-blur-sm transition-colors md:h-88 md:w-88 ${
                   isDragging
@@ -157,12 +174,13 @@ export default function Home() {
 
                   processFile(file);
                 }}
+                onClick={() => fileInputRef.current?.click()}
               >
                 <div className="mb-5 flex h-24 w-24 items-center justify-center rounded-full border-2 border-dashed border-cyan-300/80 bg-slate-900/80">
                   <FolderOpen className="h-11 w-11 text-cyan-200" />
                 </div>
                 <p className="text-xl font-bold text-slate-100">Drop your CSV here</p>
-                <p className="mt-1 text-sm text-slate-300">CSV only, with address and amount columns</p>
+                <p className="mt-1 text-sm text-slate-300">or click to browse</p>
               </div>
             </div>
 
