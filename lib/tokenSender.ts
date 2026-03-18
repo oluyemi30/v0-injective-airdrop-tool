@@ -6,16 +6,21 @@ import {
   ChainRestTendermintApi,
   createTransaction,
   getTxRawFromTxRawOrDirectSignResponse,
-  TxRestClient,
+  TxRestApi,
 } from '@injectivelabs/sdk-ts';
-import { BigNumberInBase, DEFAULT_BLOCK_TIMEOUT_HEIGHT, DEFAULT_STD_FEE } from '@injectivelabs/utils';
+import { BigNumber } from 'bignumber.js';
 import { getNetworkEndpoints, Network } from '@injectivelabs/networks';
-import { ChainId } from '@injectivelabs/ts-types';
 
 const NETWORK = Network.TestnetK8s;
-const CHAIN_ID = ChainId.Testnet; // 'injective-888'
+const CHAIN_ID = 'injective-888';
 const ENDPOINTS = getNetworkEndpoints(NETWORK);
 const INJ_DECIMALS = 18;
+
+// Default fee for INJ transactions
+const DEFAULT_STD_FEE = {
+  amount: [{ denom: 'inj', amount: '50000000000000000' }], // 0.05 INJ
+  gas: '200000',
+};
 
 export const estimateGasFee = (gasPrice: number, gasLimit: number): string => {
   return (gasPrice * gasLimit).toFixed(18);
@@ -63,7 +68,9 @@ export const sendToken = async (
     const pubKey = Buffer.from(key.pubKey).toString('base64');
 
     // Convert amount to base units (inj has 18 decimals)
-    const amountInWei = new BigNumberInBase(amount).toWei().toFixed();
+    const amountInWei = new BigNumber(amount)
+      .multipliedBy(new BigNumber(10).pow(INJ_DECIMALS))
+      .toFixed(0);
 
     // Build the MsgSend
     const msg = MsgSend.fromJSON({
@@ -84,10 +91,10 @@ export const sendToken = async (
     const chainRestTendermintApi = new ChainRestTendermintApi(ENDPOINTS.rest);
     const latestBlock = await chainRestTendermintApi.fetchLatestBlock();
     const latestHeight = latestBlock.header.height;
-    const timeoutHeight = parseInt(latestHeight, 10) + DEFAULT_BLOCK_TIMEOUT_HEIGHT;
+    const timeoutHeight = parseInt(latestHeight, 10) + 50;
 
     // Create the transaction
-    const { signDoc, txRaw } = createTransaction({
+    const { signDoc } = createTransaction({
       pubKey,
       chainId: CHAIN_ID,
       fee: DEFAULT_STD_FEE,
@@ -104,12 +111,11 @@ export const sendToken = async (
     );
 
     // Build the final TxRaw from the sign response
-    // (user may have modified gas in Keplr popup)
     const txRawSigned = getTxRawFromTxRawOrDirectSignResponse(directSignResponse);
 
     // Broadcast
-    const txRestClient = new TxRestClient(ENDPOINTS.rest);
-    const txResponse = await txRestClient.broadcast(txRawSigned);
+    const txRestApi = new TxRestApi(ENDPOINTS.rest);
+    const txResponse = await txRestApi.broadcast(txRawSigned);
 
     if (txResponse.code !== 0) {
       return {
@@ -172,7 +178,6 @@ export const sendAllTokens = async (
       });
     }
 
-    // 1-second delay between transactions to avoid sequence conflicts
     if (i < recipients.length - 1) {
       await new Promise((resolve) => setTimeout(resolve, 1000));
     }
