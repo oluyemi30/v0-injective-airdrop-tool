@@ -6,8 +6,8 @@ const CHAIN_ID = 'injective-888';
 const INJECTIVE_TESTNET_CONFIG = {
   chainId: 'injective-888',
   chainName: 'Injective Testnet',
-  rpc: 'https://testnet.tm.injective.network:443',
-  rest: 'https://testnet.rest.injective.network',
+  rpc: 'https://testnet.tm.injective.network:26657',
+  rest: 'https://testnet-api.injective.dev',
   bip44: {
     coinType: 60,
   },

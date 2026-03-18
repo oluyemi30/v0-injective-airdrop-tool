@@ -68,27 +68,20 @@ export default function AirdropPage() {
 
   useEffect(() => {
     const stored = sessionStorage.getItem(STORAGE_KEY);
-    console.log('[v0] sessionStorage value for STORAGE_KEY:', stored);
-    console.log('[v0] STORAGE_KEY:', STORAGE_KEY);
-    console.log('[v0] All sessionStorage keys:', Object.keys(sessionStorage));
 
     if (!stored) {
-      console.log('[v0] No CSV data found in sessionStorage');
       return;
     }
 
     try {
       const parsed = JSON.parse(stored) as CSVRow[];
-      console.log('[v0] Parsed CSV data:', parsed);
 
       if (!Array.isArray(parsed) || parsed.length === 0) {
-        console.log('[v0] Parsed data is not a valid array or is empty');
         return;
       }
 
       initFromData(parsed);
-    } catch (error) {
-      console.log('[v0] Error parsing CSV from sessionStorage:', error);
+    } catch {
       setSendError('Unable to load the uploaded CSV. Please upload again.');
     }
   }, [initFromData]);
