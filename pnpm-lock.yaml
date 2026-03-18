@@ -17,6 +17,12 @@ importers:
       '@injectivelabs/sdk-ts':
         specifier: ^1.14.24
         version: 1.18.9(google-protobuf@3.21.4)(typescript@5.7.3)(zod@3.25.76)
+      '@injectivelabs/ts-types':
+        specifier: ^1.18.9
+        version: 1.18.9
+      '@injectivelabs/utils':
+        specifier: ^1.18.9
+        version: 1.18.9
       '@radix-ui/react-accordion':
         specifier: 1.2.12
         version: 1.2.12(@types/react-dom@19.2.3(@types/react@19.2.14))(@types/react@19.2.14)(react-dom@19.2.4(react@19.2.4))(react@19.2.4)
